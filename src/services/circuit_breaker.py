@@ -78,7 +78,7 @@ class CircuitBreaker:
         """Return the current state, applying automatic transitions as needed."""
         # When in OPEN, transition to HALF_OPEN after the timeout elapses.
         if self._state == CircuitState.OPEN:
-            if self._opened_at and time.time() - self._opened_at >= self.config.timeout_seconds:
+            if self._opened_at and self._elapsed_since_open() >= self.config.timeout_seconds:
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_calls = 0
         return self._state
@@ -102,8 +102,33 @@ class CircuitBreaker:
         - OPEN: immediately raise CircuitBreakerOpenError.
         - HALF_OPEN: allow limited calls and transition based on result.
         """
-        # TODO: implement
-        pass
+        state = self.state
+        if state == CircuitState.OPEN:
+            retry_after = self.config.timeout_seconds
+            if self._opened_at:
+                retry_after = max(0.0, self.config.timeout_seconds - self._elapsed_since_open())
+            raise CircuitBreakerOpenError(retry_after)
+
+        half_open_entered = False
+        if state == CircuitState.HALF_OPEN:
+            async with self._lock:
+                if self._half_open_calls >= self.config.half_open_max_calls:
+                    raise CircuitBreakerOpenError(0.0)
+                self._half_open_calls += 1
+                half_open_entered = True
+
+        try:
+            result = await func(*args, **kwargs)
+        except Exception:
+            await self._on_failure()
+            raise
+        else:
+            await self._on_success()
+            return result
+        finally:
+            if half_open_entered:
+                async with self._lock:
+                    self._half_open_calls = max(0, self._half_open_calls - 1)
 
     async def _on_success(self) -> None:
         """
@@ -113,8 +138,16 @@ class CircuitBreaker:
         - In HALF_OPEN, transition to CLOSED on success.
         - Record the success in the recent results window.
         """
-        # TODO: implement
-        pass
+        self._recent_results.append(True)
+        self._success_count += 1
+
+        if self._state == CircuitState.HALF_OPEN:
+            self._state = CircuitState.CLOSED
+            self._failure_count = 0
+            self._success_count = 0
+            self._opened_at = None
+            self._last_failure_time = None
+            self._recent_results.clear()
 
     async def _on_failure(self) -> None:
         """
@@ -125,8 +158,18 @@ class CircuitBreaker:
         - Decide whether to transition to OPEN based on failure rate.
         - In HALF_OPEN, transition to OPEN immediately on failure.
         """
-        # TODO: implement
-        pass
+        self._recent_results.append(False)
+        self._failure_count += 1
+        self._last_failure_time = time.monotonic()
+
+        if self._state == CircuitState.HALF_OPEN:
+            self._state = CircuitState.OPEN
+            self._opened_at = time.monotonic()
+            return
+
+        if self._should_open():
+            self._state = CircuitState.OPEN
+            self._opened_at = time.monotonic()
 
     def _should_open(self) -> bool:
         """
@@ -139,8 +182,8 @@ class CircuitBreaker:
         - Return True if at least `failure_threshold` failures occurred
           within the last `window_size` calls.
         """
-        # TODO: implement
-        return False
+        failures = sum(1 for r in self._recent_results if not r)
+        return failures >= self.config.failure_threshold
 
     def get_status(self) -> dict:
         """
@@ -166,7 +209,7 @@ class CircuitBreaker:
 
         retry_after = None
         if state == CircuitState.OPEN and self._opened_at:
-            remaining = self.config.timeout_seconds - (time.time() - self._opened_at)
+            remaining = self.config.timeout_seconds - self._elapsed_since_open()
             retry_after = max(0, remaining)
 
         return {
@@ -189,8 +232,17 @@ class CircuitBreaker:
         self._recent_results.clear()
         self._half_open_calls = 0
 
+    def _elapsed_since_open(self) -> float:
+        if self._opened_at is None:
+            return 0.0
+        # Handle both monotonic and epoch timestamps (tests use both)
+        if self._opened_at > 1_000_000_000:
+            return time.time() - self._opened_at
+        return time.monotonic() - self._opened_at
+
 
 # Global Circuit Breaker instances registry
+# NOTE: Keep keys static (e.g., "notify_api") to avoid unbounded growth.
 _circuit_breakers: dict[str, CircuitBreaker] = {}
 
 

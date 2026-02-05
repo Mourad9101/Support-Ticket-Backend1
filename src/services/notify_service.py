@@ -1,11 +1,12 @@
 import httpx
 import asyncio
-import random
 from src.core.logging import logger
+from src.services.circuit_breaker import CircuitBreakerOpenError, get_circuit_breaker
 
 class NotifyService:
     def __init__(self):
         self.notify_url = "http://mock-external-api:9000/notify"
+        self.cb = get_circuit_breaker("notify_api")
 
     async def send_notification(self, ticket_id: str, tenant_id: str, urgency: str, reason: str):
         """
@@ -27,8 +28,11 @@ class NotifyService:
         async with httpx.AsyncClient(timeout=10) as client:
             for attempt in range(1, max_attempts + 1):
                 try:
-                    response = await client.post(self.notify_url, json=payload)
+                    response = await self.cb.call(client.post, self.notify_url, json=payload)
                     response.raise_for_status()
+                    return
+                except CircuitBreakerOpenError as exc:
+                    logger.warning("Notification circuit open: %s", exc)
                     return
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
