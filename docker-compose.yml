@@ -8,6 +8,7 @@ services:
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - EXTERNAL_API_URL=http://mock-external-api:9000
+      - PYTHONPATH=/app
     depends_on:
       - mongodb
       - mock-external-api
