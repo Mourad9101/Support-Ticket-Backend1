@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import time
+from contextlib import asynccontextmanager
 from src.api.routes import router
-from src.api.endpoints.ingestion import router as ingestion_router
-from src.db.indexes import create_indexes
+from src.db.mongo import create_indexes
 
-app = FastAPI(title="Support Ticket Analysis System")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await create_indexes()
+    yield
+
+app = FastAPI(title="Support Ticket Analysis System", lifespan=lifespan)
 
 @app.middleware("http")
 async def timeout_middleware(request: Request, call_next):
@@ -21,13 +26,4 @@ async def timeout_middleware(request: Request, call_next):
         return response
     return await call_next(request)
 
-@app.on_event("startup")
-async def startup_event():
-    await create_indexes()
-
 app.include_router(router)
-app.include_router(ingestion_router)
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
