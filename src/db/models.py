@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 
@@ -17,9 +17,12 @@ class TicketInDB(TicketBase):
     urgency: str
     sentiment: str
     requires_action: bool
+    deleted_at: Optional[datetime] = None
+
+    model_config = ConfigDict(validate_by_name=True)
 
 class TicketResponse(TicketInDB):
-    pass
+    model_config = ConfigDict(validate_by_name=True)
 
 class TicketHistory(BaseModel):
     """Ticket change history model (Task 12)."""
@@ -38,3 +41,15 @@ class TenantStats(BaseModel):
     hourly_trend: Optional[List[dict]] = None
     top_keywords: Optional[List[str]] = None
     at_risk_customers: Optional[List[dict]] = None
+
+
+class IngestionLog(BaseModel):
+    tenant_id: str
+    status: str  # running, completed, failed
+    tickets_processed: int = 0
+    total_pages: Optional[int] = None
+    processed_pages: int = 0
+    job_id: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    error_message: Optional[str] = None
