@@ -1,4 +1,48 @@
 class ClassifyService:
+    HIGH_URGENCY_KEYWORDS = {
+        "lawsuit",
+        "legal",
+        "gdpr",
+        "chargeback",
+        "fraud",
+        "security",
+        "breach",
+        "emergency",
+        "dangerous",
+    }
+    MEDIUM_URGENCY_KEYWORDS = {
+        "refund",
+        "invoice",
+        "payment",
+        "broken",
+        "error",
+        "bug",
+        "glitch",
+        "outage",
+        "fail",
+        "not working",
+    }
+    NEGATIVE_SENTIMENT_KEYWORDS = {
+        "angry",
+        "terrible",
+        "scam",
+        "worst",
+        "useless",
+        "incompetent",
+        "frustrating",
+        "disappointed",
+        "slow",
+    }
+    POSITIVE_SENTIMENT_KEYWORDS = {
+        "great",
+        "awesome",
+        "amazing",
+        "thanks",
+        "helpful",
+        "best",
+        "love",
+    }
+
     @staticmethod
     def classify(message: str, subject: str) -> dict:
         """
@@ -8,16 +52,16 @@ class ClassifyService:
         """
         text = f"{subject} {message}".lower()
 
-        if "lawsuit" in text or "gdpr" in text or "urgent" in text:
+        if any(keyword in text for keyword in ClassifyService.HIGH_URGENCY_KEYWORDS):
             urgency = "high"
-        elif "refund" in text or "broken" in text:
+        elif any(keyword in text for keyword in ClassifyService.MEDIUM_URGENCY_KEYWORDS):
             urgency = "medium"
         else:
             urgency = "low"
 
-        if "angry" in text or "broken" in text or "lawsuit" in text:
+        if any(keyword in text for keyword in ClassifyService.NEGATIVE_SENTIMENT_KEYWORDS):
             sentiment = "negative"
-        elif "great" in text or "thanks" in text:
+        elif any(keyword in text for keyword in ClassifyService.POSITIVE_SENTIMENT_KEYWORDS):
             sentiment = "positive"
         else:
             sentiment = "neutral"

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.db.mongo import get_db
 
 class AnalyticsService:
@@ -9,7 +9,7 @@ class AnalyticsService:
         bringing large result sets into application memory.
         """
         db = await get_db()
-        match: dict = {"tenant_id": tenant_id}
+        match: dict = {"tenant_id": tenant_id, "deleted_at": None}
         if from_date or to_date:
             match["created_at"] = {}
             if from_date:
@@ -17,7 +17,7 @@ class AnalyticsService:
             if to_date:
                 match["created_at"]["$lte"] = to_date
 
-        last_24_hours = datetime.utcnow() - timedelta(hours=24)
+        last_24_hours = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)
 
         pipeline = [
             {"$match": match},
