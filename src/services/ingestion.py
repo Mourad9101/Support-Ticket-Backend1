@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List
+import asyncio
 import httpx
 from pymongo import UpdateOne
 from src.db.mongo import get_db
@@ -36,11 +37,35 @@ class IngestionService:
 
         async with httpx.AsyncClient(timeout=15) as client:
             while True:
-                response = await client.get(
-                    self.external_api_url,
-                    params={"page": page, "page_size": page_size}
-                )
-                response.raise_for_status()
+                max_retries = 3
+                backoff_seconds = 1
+                response = None
+
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        response = await client.get(
+                            self.external_api_url,
+                            params={"page": page, "page_size": page_size}
+                        )
+                        response.raise_for_status()
+                        break
+                    except httpx.HTTPStatusError as exc:
+                        status_code = exc.response.status_code
+                        if 500 <= status_code <= 599 and attempt < max_retries:
+                            await asyncio.sleep(backoff_seconds)
+                            backoff_seconds *= 2
+                            continue
+                        raise
+                    except httpx.RequestError:
+                        if attempt < max_retries:
+                            await asyncio.sleep(backoff_seconds)
+                            backoff_seconds *= 2
+                            continue
+                        raise
+
+                if response is None:
+                    raise RuntimeError("HTTP request failed without a response.")
+
                 payload = response.json()
 
                 tickets: List[Dict[str, Any]] = payload.get("tickets", [])
